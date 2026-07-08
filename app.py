@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import json
 import os
+import pandas as pd  # <--- MAKE SURE THIS IS HERE
 from datetime import datetime
 # --- HELPER FUNCTIONS ---
 def get_reps(caption):
@@ -30,13 +31,24 @@ def init_db():
                   streak INTEGER, custom_quests TEXT, inventory TEXT, equipped TEXT, gallery_logs TEXT)''')
     conn.commit()
     conn.close()
+def get_all_users():
+    """Retrieves all users and their levels for the leaderboard."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT username, level FROM users")
+    users = c.fetchall()
+    conn.close()
+    return pd.DataFrame(users, columns=["Name", "Level"])
 
 def create_user(username, password):
+    """Creates a new user profile in the database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     hashed_pw = hashlib.sha256(password.encode()).hexdigest()
     try:
-        c.execute("INSERT INTO users VALUES (?, ?, 1, 0, 10, 10, 10, 100, 0, '[]', '[]', '', '[]')", (username, hashed_pw))
+        # Inserting default values for all 13 columns
+        c.execute("INSERT INTO users VALUES (?, ?, 1, 0, 10, 10, 10, 100, 0, '[]', '[]', '', '[]')", 
+                  (username, hashed_pw))
         conn.commit()
         success = True
     except sqlite3.IntegrityError:
@@ -45,6 +57,7 @@ def create_user(username, password):
     return success
 
 def login_user(username, password):
+    """Checks credentials and returns user data if login is successful."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     hashed_pw = hashlib.sha256(password.encode()).hexdigest()
@@ -163,9 +176,9 @@ else:
     st.progress(min(1.0, st.session_state.xp / xp_needed))
     st.write(f"XP: {st.session_state.xp} / {xp_needed} (XP Boost: {xp_mult}x | Gold Boost: {gold_mult}x)")
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🔥 Quests", "⚔️ Dungeons", "🛒 Shop", "🎒 Inventory", "🖼️ Hunter Vault", "⚠️ Penalties"
-    ])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🔥 Quests", "⚔️ Dungeons", "🛒 Shop", "🎒 Inventory", "🖼️ Hunter Vault", "⚠️ Penalties", "🏆 Leaderboard"
+])
 
  # --- TAB 1: TRAINING ZONE ---
     with tab1:
@@ -298,7 +311,7 @@ else:
                         })
                         process_training(ex, category)
                   
-    # --- TAB 2: DUNGEONS ---
+# --- TAB 2: DUNGEONS ---
     with tab2:
         st.subheader("Gate Portal System")
         dungeons = [
@@ -321,7 +334,7 @@ else:
                         st.rerun()
                     else: st.error("❌ COMBAT POWER TOO LOW.")
 
-    # --- TAB 3: SYSTEM SHOP ---
+# --- TAB 3: SYSTEM SHOP ---
     with tab3:
         st.subheader("Exchange Gold for Matrix Upgrades")
         def process_purchase(cost, item_name, is_gear=False):
@@ -346,7 +359,7 @@ else:
             st.info("🏆 **Amulet of Greed**\n\n+50% Gold Multiplier\n\n400 G")
             if st.button("Buy Amulet"): process_purchase(400, "Amulet of Greed", is_gear=True)
 
-    # --- TAB 4: INVENTORY ---
+# --- TAB 4: INVENTORY ---
     with tab4:
         st.subheader("Your Armory & Equipment Matrix")
         if not st.session_state.inventory: st.write("Inventory empty.")
@@ -360,7 +373,7 @@ else:
                     save_game()
                     st.rerun()
 
-    # --- TAB 5: HUNTER VAULT ---
+# --- TAB 5: HUNTER VAULT ---
     with tab5:
         st.subheader("🖼️ Hunter Progression Memory Vault")
         uploaded_file = st.file_uploader("Upload New Progress Entry (JPG/PNG)", type=["jpg", "jpeg", "png"])
@@ -397,7 +410,7 @@ else:
                         st.write(f"📝 **Note:** {entry['caption']}")
                     st.markdown("---")
 
-    # --- TAB 6: PENALTIES ---
+# --- TAB 6: PENALTIES ---
     with tab6:
         st.subheader("System Calibration Zone")
         col_p1, col_p2 = st.columns(2)
@@ -413,3 +426,13 @@ else:
                 st.session_state.gold = max(0, st.session_state.gold - 50)
                 save_game()
                 st.rerun()
+
+# --- TAB 7: LEADERBOARD ---
+    with tab7:
+        st.subheader("Global Hunter Rankings")
+        df_users = get_all_users()
+        if not df_users.empty:
+            df_users = df_users.sort_values(by="Level", ascending=False)
+            st.dataframe(df_users, use_container_width=True, hide_index=True)
+        else:
+            st.write("No hunters found in the system.")
